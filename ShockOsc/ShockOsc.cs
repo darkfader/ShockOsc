@@ -1,6 +1,3 @@
-using System.Collections.Concurrent;
-using System.Globalization;
-using System.Reflection;
 using OpenShock.ShockOsc.Models;
 using OpenShock.ShockOsc.OscChangeTracker;
 using OpenShock.ShockOsc.OscQueryLibrary;
@@ -8,6 +5,9 @@ using OpenShock.ShockOsc.Utils;
 using Serilog;
 using Serilog.Events;
 using SmartFormat;
+using System.Collections.Concurrent;
+using System.Globalization;
+using System.Reflection;
 
 #pragma warning disable CS4014
 
@@ -82,6 +82,12 @@ public static class ShockOsc
         _logger.Information("Init user hub...");
         await UserHubClient.InitializeAsync();
 
+        if (Config.ConfigInstance.SerialPort != null)
+        {
+            _logger.Information("Init serial port...");
+            SerialPortClient.Open();
+        }
+
         _logger.Information("Creating OSC Query Server...");
         _ = new OscQueryServer(
             "ShockOsc", // service name
@@ -100,6 +106,11 @@ public static class ShockOsc
         Shockers.TryAdd("_All", new Shocker(Guid.Empty, "_All"));
         foreach (var (shockerName, shockerId) in Config.ConfigInstance.ShockLink.Shockers)
             Shockers.TryAdd(shockerName, new Shocker(shockerId, shockerName));
+        if (Config.ConfigInstance.SerialPort != null)
+        {
+            foreach (var (shockerName, rftransmit) in Config.ConfigInstance.SerialPort.Shockers)
+                Shockers.TryAdd(shockerName, new Shocker(rftransmit, shockerName));
+        }
 
         _logger.Information("Ready");
 
@@ -340,7 +351,7 @@ public static class ShockOsc
             "Sending shock to {Shocker} Intensity: {Intensity} IntensityPercentage: {IntensityPercentage}% Length:{Length}s",
             shocker.Name, intensity, intensityPercentage, inSeconds);
 
-        await ControlShocker(shocker.Id, duration, intensity, ControlType.Shock);
+        await ControlShocker(shocker, duration, intensity, ControlType.Shock);
 
         if (!Config.ConfigInstance.Osc.Chatbox) return;
         // Chatbox message local
@@ -450,7 +461,7 @@ public static class ShockOsc
                 shocker.LastVibration = DateTime.UtcNow;
 
                 _logger.Debug("Vibrating {Shocker} at {Intensity}", pos, vibrationIntensity);
-                await ControlShocker(shocker.Id, 1000, (byte)vibrationIntensity,
+                await ControlShocker(shocker, 1000, (byte)vibrationIntensity,
                     Config.ConfigInstance.Behaviour.WhileBoneHeld == Config.Conf.BehaviourConf.BoneHeldAction.Shock
                         ? ControlType.Shock
                         : ControlType.Vibrate);
@@ -508,24 +519,42 @@ public static class ShockOsc
             (int)(rdr.Max / config.RandomDurationStep)) * config.RandomDurationStep);
     }
 
-    private static Task ControlShocker(Guid shockerId, uint duration, byte intensity, ControlType type)
+    private static Task ControlShocker(Shocker shocker, uint duration, byte intensity, ControlType type)
     {
-        if (shockerId == Guid.Empty)
-            return UserHubClient.Control(Shockers.Where(x => x.Value.Id != Guid.Empty).Select(x => new Control
+        string shockerName = shocker.Name;    // we could put this into the parameter too
+
+        Guid shockerId = shocker.Id;
+
+        if (shockerId == Guid.Empty && shockerName == "_All")
+        {
+            Control[] shockers = Shockers.Where(x => x.Value.Id != Guid.Empty).Select(x => new Control
             {
                 Id = x.Value.Id,
                 Intensity = intensity,
                 Duration = duration,
                 Type = type
-            }).ToArray());
+            }).ToArray();
 
-        return UserHubClient.Control(new Control
-        {
-            Id = shockerId,
-            Intensity = intensity,
-            Duration = duration,
-            Type = type
-        });
+            return Task.WhenAll([UserHubClient.Control(shockers), SerialPortClient.Control(shockers)]);
+        }
+
+        return Task.WhenAll([
+            UserHubClient.Control(new Control
+            {
+                Id = shockerId,
+                Intensity = intensity,
+                Duration = duration,
+                Type = type
+            }),
+            SerialPortClient.Control(new Control
+            {
+                Id = Guid.Empty,
+                rftransmit = shocker.rftransmit,
+                Intensity = intensity,
+                Duration = duration,
+                Type = type
+            })
+       ]);
     }
 
     public static async Task RemoteActivateShocker(ControlLogSender sender, ControlLog log)
@@ -577,14 +606,14 @@ public static class ShockOsc
             switch (log.Type)
             {
                 case ControlType.Shock:
-                {
-                    pain.LastIntensity = log.Intensity;
-                    pain.LastDuration = log.Duration;
-                    pain.LastExecuted = log.ExecutedAt;
+                    {
+                        pain.LastIntensity = log.Intensity;
+                        pain.LastDuration = log.Duration;
+                        pain.LastExecuted = log.ExecutedAt;
 
-                    oneShock = true;
-                    break;
-                }
+                        oneShock = true;
+                        break;
+                    }
                 case ControlType.Vibrate:
                     pain.LastVibration = log.ExecutedAt;
                     break;
@@ -621,7 +650,7 @@ public static class ShockOsc
     private static Task CancelAction(Shocker shocker)
     {
         _logger.Debug("Cancelling action");
-        return ControlShocker(shocker.Id, 0, 0, ControlType.Stop);
+        return ControlShocker(shocker, 0, 0, ControlType.Stop);
     }
 
     private static float LerpFloat(float min, float max, float t) => min + (max - min) * t;

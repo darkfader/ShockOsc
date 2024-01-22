@@ -1,7 +1,7 @@
-﻿using System.Text.Json;
-using System.Text.Json.Serialization;
-using OpenShock.ShockOsc.Models;
+﻿using OpenShock.ShockOsc.Models;
 using Serilog;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OpenShock.ShockOsc;
 
@@ -112,7 +112,8 @@ public static class Config
             Shockers = new Dictionary<string, Guid>(),
             UserHub = null!,
             ApiToken = "SET THIS TO YOUR OPENSHOCK API TOKEN",
-        }
+        },
+        SerialPort = null
     };
 
     public class Conf
@@ -120,6 +121,7 @@ public static class Config
         public required OscConf Osc { get; set; }
         public required BehaviourConf Behaviour { get; set; }
         public required OpenShockConf ShockLink { get; set; }
+        public required SerialPortConf? SerialPort { get; set; }
         public ChatboxConf Chatbox { get; set; } = new();
         public Version? LastIgnoredVersion { get; set; }
 
@@ -177,7 +179,7 @@ public static class Config
                         }
                     }
                 };
-            
+
             public class ControlTypeConf
             {
                 public required bool Enabled { get; set; }
@@ -229,6 +231,12 @@ public static class Config
             public Uri UserHub { get; init; } = new("https://api.shocklink.net/1/hubs/user");
             public required string ApiToken { get; init; }
             public required IReadOnlyDictionary<string, Guid> Shockers { get; init; }
+        }
+
+        public class SerialPortConf
+        {
+            public required string PortName { get; init; }
+            public required IReadOnlyDictionary<string, rftransmit> Shockers { get; init; }
         }
     }
 }
