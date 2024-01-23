@@ -29,7 +29,7 @@ public static class SerialPortClient
         SerialPort = new SerialPort
         {
             PortName = Config.ConfigInstance.SerialPort.PortName,
-            BaudRate = 115200,
+            BaudRate = Config.ConfigInstance.SerialPort.BaudRate ?? 115200,
             Parity = Parity.None,
             DataBits = 8,
             StopBits = StopBits.One,

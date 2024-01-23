@@ -77,10 +77,13 @@ public static class ShockOsc
             _logger.Error(e, "Unknown error in updater");
         }
 
-        _logger.Information("Found shockers: {Shockers}", Config.ConfigInstance.ShockLink.Shockers.Select(x => x.Key));
+        if (Config.ConfigInstance.ShockLink != null)
+        {
+            _logger.Information("Found shockers: {Shockers}", Config.ConfigInstance.ShockLink.Shockers.Select(x => x.Key));
 
-        _logger.Information("Init user hub...");
-        await UserHubClient.InitializeAsync();
+            _logger.Information("Init user hub...");
+            await UserHubClient.InitializeAsync();
+        }
 
         if (Config.ConfigInstance.SerialPort != null)
         {
@@ -104,8 +107,11 @@ public static class ShockOsc
         OsTask.Run(CheckLoop);
 
         Shockers.TryAdd("_All", new Shocker(Guid.Empty, "_All"));
-        foreach (var (shockerName, shockerId) in Config.ConfigInstance.ShockLink.Shockers)
-            Shockers.TryAdd(shockerName, new Shocker(shockerId, shockerName));
+        if (Config.ConfigInstance.ShockLink != null)
+        {
+            foreach (var (shockerName, shockerId) in Config.ConfigInstance.ShockLink.Shockers)
+                Shockers.TryAdd(shockerName, new Shocker(shockerId, shockerName));
+        }
         if (Config.ConfigInstance.SerialPort != null)
         {
             foreach (var (shockerName, rftransmit) in Config.ConfigInstance.SerialPort.Shockers)
@@ -539,13 +545,14 @@ public static class ShockOsc
         }
 
         return Task.WhenAll([
-            UserHubClient.Control(new Control
+            Config.ConfigInstance.ShockLink != null ? UserHubClient.Control(new Control
             {
                 Id = shockerId,
                 Intensity = intensity,
                 Duration = duration,
                 Type = type
-            }),
+            }) : Task.FromResult(typeof(void)),
+            Config.ConfigInstance.SerialPort != null ?
             SerialPortClient.Control(new Control
             {
                 Id = Guid.Empty,
@@ -553,7 +560,7 @@ public static class ShockOsc
                 Intensity = intensity,
                 Duration = duration,
                 Type = type
-            })
+            }) : Task.FromResult(typeof(void))
        ]);
     }
 

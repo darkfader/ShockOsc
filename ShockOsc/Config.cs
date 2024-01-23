@@ -120,8 +120,8 @@ public static class Config
     {
         public required OscConf Osc { get; set; }
         public required BehaviourConf Behaviour { get; set; }
-        public required OpenShockConf ShockLink { get; set; }
-        public required SerialPortConf? SerialPort { get; set; }
+        public OpenShockConf? ShockLink { get; set; }
+        public SerialPortConf? SerialPort { get; set; }
         public ChatboxConf Chatbox { get; set; } = new();
         public Version? LastIgnoredVersion { get; set; }
 
@@ -236,6 +236,7 @@ public static class Config
         public class SerialPortConf
         {
             public required string PortName { get; init; }
+            public int? BaudRate { get; init; }
             public required IReadOnlyDictionary<string, rftransmit> Shockers { get; init; }
         }
     }
